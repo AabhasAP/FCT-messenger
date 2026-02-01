@@ -1,0 +1,184 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: forensic-postgres
+    environment:
+      POSTGRES_USER: forensic_user
+      POSTGRES_PASSWORD: forensic_pass
+      POSTGRES_DB: forensic_messenger
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U forensic_user" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - forensic-network
+
+  # MongoDB
+  mongodb:
+    image: mongo:7
+    container_name: forensic-mongodb
+    environment:
+      MONGO_INITDB_DATABASE: forensic_messenger
+    volumes:
+      - mongodb_data:/data/db
+    ports:
+      - "27017:27017"
+    healthcheck:
+      test: [ "CMD", "mongosh", "--eval", "db.adminCommand('ping')" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - forensic-network
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: forensic-redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - forensic-network
+
+  # Elasticsearch
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: forensic-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - forensic-network
+
+  # MinIO (S3-compatible storage)
+  minio:
+    image: minio/minio:latest
+    container_name: forensic-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - forensic-network
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: forensic-backend
+    environment:
+      - DEBUG=False
+      - POSTGRES_SERVER=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=forensic_user
+      - POSTGRES_PASSWORD=forensic_pass
+      - POSTGRES_DB=forensic_messenger
+      - MONGODB_URL=mongodb://mongodb:27017
+      - MONGODB_DB=forensic_messenger
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - ELASTICSEARCH_HOST=elasticsearch
+      - ELASTICSEARCH_PORT=9200
+      - S3_ENDPOINT=http://minio:9000
+      - S3_ACCESS_KEY=minioadmin
+      - S3_SECRET_KEY=minioadmin
+      - S3_BUCKET=forensic-files
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - forensic-network
+    restart: unless-stopped
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: forensic-frontend
+    environment:
+      - VITE_API_URL=http://localhost:8000/api/v1
+      - VITE_WS_URL=ws://localhost:8000
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - forensic-network
+    restart: unless-stopped
+
+  # Prometheus (Metrics)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: forensic-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - forensic-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  mongodb_data:
+  redis_data:
+  elasticsearch_data:
+  minio_data:
+  prometheus_data:
+
+
+networks:
+  forensic-network:
+    driver: bridge
