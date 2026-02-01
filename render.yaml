@@ -1,0 +1,63 @@
+# Render.com Deployment Configuration
+
+# This file helps Render.com automatically detect and deploy your services
+
+# Backend Service
+services:
+  - type: web
+    name: forensic-messenger-backend
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: DEBUG
+        value: False
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ENCRYPTION_KEY
+        generateValue: true
+      - key: POSTGRES_SERVER
+        fromDatabase:
+          name: forensic-messenger-db
+          property: host
+      - key: POSTGRES_PORT
+        fromDatabase:
+          name: forensic-messenger-db
+          property: port
+      - key: POSTGRES_USER
+        fromDatabase:
+          name: forensic-messenger-db
+          property: user
+      - key: POSTGRES_PASSWORD
+        fromDatabase:
+          name: forensic-messenger-db
+          property: password
+      - key: POSTGRES_DB
+        fromDatabase:
+          name: forensic-messenger-db
+          property: database
+      - key: REDIS_HOST
+        fromService:
+          type: redis
+          name: forensic-messenger-redis
+          property: host
+      - key: REDIS_PORT
+        fromService:
+          type: redis
+          name: forensic-messenger-redis
+          property: port
+
+# PostgreSQL Database
+databases:
+  - name: forensic-messenger-db
+    databaseName: forensic_messenger
+    plan: free
+    region: oregon
+
+# Redis
+  - name: forensic-messenger-redis
+    plan: free
+    region: oregon
