@@ -1,4 +1,4 @@
-# Forensic Cyber Tech Cloud Messenger
+# 
 
 A production-ready, enterprise-grade Slack alternative with real-time messaging, workspace management, and comprehensive security features.
 
@@ -258,3 +258,4 @@ Contributions are welcome! Please read CONTRIBUTING.md for guidelines.
 ---
 
 **Built with ❤️ for secure enterprise communication**
+
